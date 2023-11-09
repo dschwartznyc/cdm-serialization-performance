@@ -9,7 +9,7 @@ from prettytable import PrettyTable
 from statistics import mean, stdev
 
 number_of_tests = 1
-repeat          = 5000
+repeat          = 5
 json_file_in    = 'LargeCDM.json'
 bson_file_in    = 'large_cdm.bson'
 json_file_out   = 'json_out.json'
@@ -88,33 +88,23 @@ def get_stupid_results (function_name):
     
 def get_results (type, size, read_function, write_function, json_results = None):
     print ('tests: ', type)
-    timings     = get_stupid_results(read_function) if stupid_flag else timeit.repeat(read_function, number=number_of_tests, repeat=repeat)
-    avg_read    = mean(timings)
-    sd_read     = stdev(timings)
-    min_read    = min(timings)
-    max_read    = max(timings)
-    timings     = get_stupid_results(write_function) if stupid_flag else timeit.repeat(write_function, number=number_of_tests, repeat=repeat)
-    avg_write   = mean(timings)
-    sd_write    = stdev(timings)
-    min_write   = min(timings)
-    max_write   = max(timings)
-    
-    compression = '' if json_results == None else "{0:,.1f}".format((size/json_results[1] - 1) * 100) + '%'
-    read_delta  = '' if json_results == None else "{0:,.1f}".format((avg_read/json_results[3] - 1) * 100) + '%'
-    write_delta = '' if json_results == None else "{0:,.1f}".format((avg_write/json_results[5] - 1) * 100) + '%'
-    return [type, 
-            size, 
-            compression, 
-            avg_read,
-            read_delta,
-            avg_write,
-            write_delta,
-            sd_read,
-            min_read,
-            max_read,
-            sd_write,
-            min_write,
-            max_write]
+    results                = {}
+    timings                = get_stupid_results(read_function) if stupid_flag else timeit.repeat(read_function, number=number_of_tests, repeat=repeat)
+    results['type']        = type
+    results['size']        = size
+    results['compression'] = None if json_results == None else (size/json_results['size'] - 1) * 100
+    results['avg_read']    = mean(timings)
+    results['sd_read']     = stdev(timings)
+    results['min_read']    = min(timings)
+    results['max_read']    = max(timings)
+    results['read_delta']  = None if json_results == None else ((results['avg_read']/json_results['avg_read'] - 1) * 100)
+    timings                = get_stupid_results(write_function) if stupid_flag else timeit.repeat(write_function, number=number_of_tests, repeat=repeat)
+    results['avg_write']   = mean(timings)
+    results['sd_write']    = stdev(timings)
+    results['min_write']   = min(timings)
+    results['max_write']   = max(timings)
+    results['write_delta'] = None if json_results == None else ((results['avg_write']/json_results['avg_write'] - 1) * 100)
+    return results
 
 def run_repeat ():
     json_results    = get_results('json', os.path.getsize (json_file_in), read_json_file, write_json_file)
@@ -123,17 +113,65 @@ def run_repeat ():
     zlib_results    = get_results('zlib', os.path.getsize (zlib_file_in), read_zlib_file, write_zlib_file, json_results)
     print ('using stupid') if (stupid_flag) else print ('using timeit.repeat')
     print ('test run ', repeat, ' times')
-    results         = PrettyTable(['type', 'file size', 'compression', 'read time', 'read %', 'write time', 'write %']) 
-    results.add_row (format_results(json_results))
-    results.add_row (format_results(bson_results))
-    results.add_row (format_results(lz4_results))
-    results.add_row (format_results(zlib_results))
+    results         = PrettyTable(['type', 'file size', 'compression'])
+    results.add_row ([json_results['type'], '{:,}'.format(json_results['size']), ''])
+    results.add_row ([bson_results['type'], '{:,}'.format(bson_results['size']), "{0:,.1f}".format(bson_results['compression']) + '%'])
+    results.add_row ([lz4_results['type'], '{:,}'.format(lz4_results['size']), "{0:,.1f}".format(lz4_results['compression'])+'%'])
+    results.add_row ([zlib_results['type'], '{:,}'.format(zlib_results['size']), "{0:,.1f}".format(zlib_results['compression']) + '%'])
     print (results)
-    results         = PrettyTable(['type', 'read sd', 'read min', 'read max', 'write sd', 'write min', 'write max']) 
-    results.add_row (format_stats(json_results))
-    results.add_row (format_stats(bson_results))
-    results.add_row (format_stats(lz4_results))
-    results.add_row (format_stats(zlib_results))
+    print ('read info')
+    results        = PrettyTable(['type', 'mean time', 'delta', 'std dev', 'min', 'max'])
+    results.add_row ([json_results['type'], 
+                      '{:,.5f}'.format(json_results['avg_read']), 
+                      '', 
+                      '{:,.5f}'.format(json_results['sd_read']),
+                      '{:,.5f}'.format(json_results['min_read']),
+                      '{:,.5f}'.format(json_results['max_read'])])
+    results.add_row ([bson_results['type'], 
+                      '{:,.5f}'.format(bson_results['avg_read']), 
+                      '{0:,.1f}'.format(bson_results['read_delta']) + '%', 
+                      '{:,.5f}'.format(bson_results['sd_read']),
+                      '{:,.5f}'.format(bson_results['min_read']),
+                      '{:,.5f}'.format(bson_results['max_read'])])
+    results.add_row ([lz4_results['type'], 
+                      '{:,.5f}'.format(lz4_results['avg_read']), 
+                      '{0:,.1f}'.format(lz4_results['read_delta']) + '%', 
+                      '{:,.5f}'.format(lz4_results['sd_read']),
+                      '{:,.5f}'.format(lz4_results['min_read']),
+                      '{:,.5f}'.format(lz4_results['max_read'])])
+    results.add_row ([zlib_results['type'], 
+                      '{:,.5f}'.format(zlib_results['avg_read']), 
+                      '{0:,.1f}'.format(zlib_results['read_delta'])+ '%', 
+                      '{:,.5f}'.format(zlib_results['sd_read']),
+                      '{:,.5f}'.format(zlib_results['min_read']),
+                      '{:,.5f}'.format(zlib_results['max_read'])])
+    print (results)
+    print ('write info')
+    results        = PrettyTable(['type', 'mean time', 'delta', 'std dev', 'min', 'max'])
+    results.add_row ([json_results['type'], 
+                      '{:,.5f}'.format(json_results['avg_write']), 
+                      '', 
+                      '{:,.5f}'.format(json_results['sd_write']),
+                      '{:,.5f}'.format(json_results['min_write']),
+                      '{:,.5f}'.format(json_results['max_write'])])
+    results.add_row ([bson_results['type'], 
+                      '{:,.5f}'.format(bson_results['avg_write']), 
+                      '{0:,.1f}'.format(bson_results['write_delta']) + '%', 
+                      '{:,.5f}'.format(bson_results['sd_write']),
+                      '{:,.5f}'.format(bson_results['min_write']),
+                      '{:,.5f}'.format(bson_results['max_write'])])
+    results.add_row ([lz4_results['type'], 
+                      '{:,.5f}'.format(lz4_results['avg_write']), 
+                      '{0:,.1f}'.format(lz4_results['write_delta']) + '%', 
+                      '{:,.5f}'.format(lz4_results['sd_write']),
+                      '{:,.5f}'.format(lz4_results['min_write']),
+                      '{:,.5f}'.format(lz4_results['max_write'])])
+    results.add_row ([zlib_results['type'], 
+                      '{:,.5f}'.format(zlib_results['avg_write']), 
+                      '{0:,.1f}'.format(zlib_results['write_delta'])+ '%', 
+                      '{:,.5f}'.format(zlib_results['sd_write']),
+                      '{:,.5f}'.format(zlib_results['min_write']),
+                      '{:,.5f}'.format(zlib_results['max_write'])])
     print (results)
 
 if __name__ == "__main__":
