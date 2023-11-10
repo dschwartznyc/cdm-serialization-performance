@@ -7,6 +7,8 @@ import timeit
 from timeit import default_timer
 from prettytable import PrettyTable 
 from statistics import mean, stdev
+import argparse
+import sys
 
 number_of_tests = 1
 repeat          = 5000
@@ -19,7 +21,7 @@ lz4_file_out    = 'lz4_out.lz4'
 zlib_file_in    = 'large_cdm.zlib'
 zlib_file_out   = 'zlib_out.zlib'
 json_dict       = {}
-stupid_flag     = True
+brute_force     = True
 
 def read_json_file():
     with open(json_file_in,'r') as r:
@@ -57,7 +59,7 @@ def write_lz4_file():
     with open(lz4_file_out, 'wb') as w:
         w.write (lz4.frame.compress(json.dumps(json_dict).encode()))
 
-def get_stupid_results (function_name):
+def get_brute_force_results (function_name):
     timings = [0] * repeat
     for i in range (repeat):
         start = default_timer()
@@ -67,9 +69,9 @@ def get_stupid_results (function_name):
     return timings
     
 def get_results (type, size, read_function, write_function, json_results = None):
-    print ('tpye:', type, ' ... read results', end='...', flush=True)
+    print ('running for tpye:', type, '... repeating ', repeat, 'times ... processing reads ... ', end='', flush=True)
     results                = {}
-    timings                = get_stupid_results(read_function) if stupid_flag else timeit.repeat(read_function, number=number_of_tests, repeat=repeat)
+    timings                = get_brute_force_results(read_function) if brute_force else timeit.repeat(read_function, number=number_of_tests, repeat=repeat)
     results['type']        = type
     results['size']        = size
     results['compression'] = None if json_results == None else (size/json_results['size'] - 1) * 100
@@ -78,8 +80,8 @@ def get_results (type, size, read_function, write_function, json_results = None)
     results['min_read']    = min(timings)
     results['max_read']    = max(timings)
     results['read_delta']  = None if json_results == None else ((results['avg_read']/json_results['avg_read'] - 1) * 100)
-    print ('write results', end='...', flush=True)
-    timings                = get_stupid_results(write_function) if stupid_flag else timeit.repeat(write_function, number=number_of_tests, repeat=repeat)
+    print ('processing writes ... ', end='', flush=True)
+    timings                = get_brute_force_results(write_function) if brute_force else timeit.repeat(write_function, number=number_of_tests, repeat=repeat)
     results['avg_write']   = mean(timings)
     results['sd_write']    = stdev(timings)
     results['min_write']   = min(timings)
@@ -93,11 +95,8 @@ def run_repeat ():
     bson_results    = get_results('bson', os.path.getsize (bson_file_in), read_bson_file, write_bson_file, json_results)
     lz4_results     = get_results('lz4',  os.path.getsize (lz4_file_in), read_lz4_file, write_lz4_file, json_results)
     zlib_results    = get_results('zlib', os.path.getsize (zlib_file_in), read_zlib_file, write_zlib_file, json_results)
-    print ('test run ', repeat, ' times', end='')
-    if (stupid_flag):
-        print (' using stupid')
-    else:
-        print (' using timeit.repeat')
+    print ('ran tests ... repeating:', repeat, 'times', end='')
+    print (' using', 'brute force' if brute_force else 'tineit.repeat')
     results         = PrettyTable (['', 'json', 'bson', 'lz4', 'zlib'])
     results.add_row (['file size', 
                       '{:,}'.format(json_results['size']),
@@ -166,18 +165,38 @@ def run_repeat ():
     print (results)
 
 if __name__ == "__main__":
-    json_dict        = read_json_file ()
+    # Instantiate the parser    
+
+
+    parser = argparse.ArgumentParser(
+        usage="%(prog)s [OPTION]",
+        description='Coompare file size and read and write times using JSON, BSON, lz4 and zlib')
+    parser.add_argument(
+        "-v", "--version", action="version",
+        version=f"{parser.prog} version 0.0.1"
+    )
+    # Required positional argument
+    parser.add_argument('-r', 
+                        '--runs', 
+                        type=lambda x: (int(x) > 1) and int(x) or sys.exit("Number of runs must be greater than 1"),
+                        required=False, 
+                        default=1000, 
+                        help='override number of runs (must be > 1 and default = 1000)')
+    parser.add_argument('-t', 
+                        '--timeit', 
+                        action='store_false')
+    args        = parser.parse_args()
+    repeat      = args.runs
+    brute_force = args.timeit
+    json_dict   = read_json_file ()
     if(not os.path.isfile(bson_file_in)):
         write_bson_file()
     if(not os.path.isfile(lz4_file_in)):
         write_lz4_file()
         os.rename(lz4_file_out, lz4_file_in)
-    lz4_dict        = read_lz4_file ()
+    lz4_dict  = read_lz4_file ()
     if(not os.path.isfile(zlib_file_in)):
         write_zlib_file()
         os.rename(zlib_file_out, zlib_file_in)
-    zlib_dict       = read_zlib_file ()
-    run_repeat ()
-    stupid_flag     = False
-    run_repeat ()
-    
+    zlib_dict = read_zlib_file ()
+    run_repeat ()    
